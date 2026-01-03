@@ -51,6 +51,12 @@ button {
   border-radius: 10px;
   margin-top: 10px;
 }
+.friendDiv {
+  cursor:pointer;
+  padding:5px;
+  background: rgba(255,255,255,0.2);
+  margin-top:3px;
+}
 </style>
 </head>
 <body>
@@ -118,23 +124,24 @@ let friend = null;
 
 /* 🔹 SIGNUP */
 signup.onclick = async () => {
-  try{
-    const u = username.value.trim();
+  try {
+    const u = username.value.trim().toLowerCase();
     const p = password.value.trim();
     if(!u || !p) return status.textContent="Vul alles in";
     await createUserWithEmailAndPassword(auth, u+"@catchat.com", p);
-    await setDoc(doc(db,"users",u),{friends:[],online:true});
+    await setDoc(doc(db,"users",u), {friends:[], online:true}, {merge:true});
     status.textContent="Signup gelukt. Log nu in.";
-  }catch(e){status.textContent=e.message;}
+  } catch(e){status.textContent=e.message;}
 };
 
 /* 🔹 LOGIN */
 loginBtn.onclick = async () => {
   try{
-    const u = username.value.trim();
+    const u = username.value.trim().toLowerCase();
     const p = password.value.trim();
+    if(!u || !p) return status.textContent="Vul alles in";
     await signInWithEmailAndPassword(auth, u+"@catchat.com", p);
-  }catch(e){status.textContent=e.message;}
+  } catch(e){status.textContent=e.message;}
 };
 
 /* 🔹 LOGOUT */
@@ -156,14 +163,16 @@ onAuthStateChanged(auth, user=>{
   meSpan.textContent = me;
   loginDiv.style.display="none";
   chatDiv.style.display="block";
-  updateDoc(doc(db,"users",me),{online:true});
+  setDoc(doc(db,"users",me),{online:true},{merge:true});
   loadFriends();
 });
 
 /* 🔹 FRIENDS */
 addFriend.onclick = async()=>{
-  if(!friendName.value) return;
-  await updateDoc(doc(db,"users",me),{friends: arrayUnion(friendName.value.toLowerCase())});
+  const f = friendName.value.trim().toLowerCase();
+  if(!f) return;
+  await updateDoc(doc(db,"users",me),{friends: arrayUnion(f)});
+  friendName.value="";
 };
 
 function loadFriends(){
@@ -174,10 +183,7 @@ function loadFriends(){
     for(const f of data.friends){
       const d = document.createElement("div");
       d.textContent=f;
-      d.style.cursor="pointer";
-      d.style.padding="5px";
-      d.style.background="rgba(255,255,255,0.2)";
-      d.style.marginTop="3px";
+      d.className="friendDiv";
       d.onclick=()=>{friend=f; chatWithSpan.textContent=f; loadChat();}
       friendsDiv.appendChild(d);
     }
@@ -186,7 +192,7 @@ function loadFriends(){
 
 /* 🔹 CHAT */
 send.onclick = async()=>{
-  if(!friend) return;
+  if(!friend || !msg.value.trim()) return;
   await addDoc(collection(db,"messages"),{
     p:[me,friend], u:me, t:msg.value, ts:Date.now()
   });
