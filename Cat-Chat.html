@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cat Chat 🐱</title>
+<style>
+body {
+  margin:0;
+  font-family: Arial, sans-serif;
+  background: linear-gradient(120deg,#ff5ca2,#7c4dff);
+  color:white;
+}
+.logo {
+  position: fixed;
+  top: 15px;
+  left: 15px;
+}
+.logo img {
+  width: 120px;
+  border-radius: 16px;
+}
+.container {
+  max-width: 500px;
+  margin: 120px auto;
+  background: rgba(255,255,255,0.15);
+  padding: 20px;
+  border-radius: 16px;
+}
+input, button {
+  width: 100%;
+  padding: 10px;
+  margin-top: 10px;
+  border: none;
+  border-radius: 8px;
+}
+button {
+  background: #ff5ca2;
+  color: white;
+  cursor: pointer;
+}
+#status {
+  margin-top: 10px;
+}
+#messages {
+  background: white;
+  color: black;
+  height: 200px;
+  overflow-y: auto;
+  padding: 10px;
+  border-radius: 10px;
+  margin-top: 10px;
+}
+</style>
+</head>
+<body>
+
+<div class="logo">
+  <img src="https://i.ibb.co/9HtYftQh/IMG-5615.png" alt="Cat Chat Logo">
+</div>
+
+<div class="container">
+<h2>Cat Chat 🐱</h2>
+
+<div id="loginDiv">
+  <input id="username" placeholder="Username">
+  <input id="password" type="password" placeholder="Wachtwoord">
+  <button id="signup">Signup</button>
+  <button id="loginBtn">Login</button>
+  <p id="status">Niet ingelogd</p>
+</div>
+
+<div id="chatDiv" style="display:none">
+  <p>Ingelogd als: <b id="me"></b></p>
+  <button id="logout">Logout</button>
+
+  <h3>Vrienden</h3>
+  <input id="friendName" placeholder="Voeg vriend toe">
+  <button id="addFriend">Toevoegen</button>
+  <div id="friends"></div>
+
+  <h3>Chat met <span id="chatWith">-</span></h3>
+  <div id="messages"></div>
+  <input id="msg" placeholder="Typ hier...">
+  <button id="send">Stuur</button>
+</div>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.3.0/firebase-app.js";
+import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.3.0/firebase-auth.js";
+import { getFirestore, doc, setDoc, updateDoc, arrayUnion, collection, addDoc, onSnapshot, query, orderBy } from "https://www.gstatic.com/firebasejs/10.3.0/firebase-firestore.js";
+
+/* 🔹 Firebase config */
+const firebaseConfig = {
+  apiKey: "AIzaSyANNl_9VEawPwu2OoHC2rPJWwWBblVyylQ",
+  authDomain: "cat-chat0.firebaseapp.com",
+  projectId: "cat-chat0",
+  storageBucket: "cat-chat0.firebasestorage.app",
+  messagingSenderId: "843087511992",
+  appId: "1:843087511992:web:787206b76f0bae9c0a0f4d"
+};
+
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+
+/* 🔹 Elementen */
+const status = document.getElementById("status");
+const loginDiv = document.getElementById("loginDiv");
+const chatDiv = document.getElementById("chatDiv");
+const meSpan = document.getElementById("me");
+const friendsDiv = document.getElementById("friends");
+const chatWithSpan = document.getElementById("chatWith");
+const messagesDiv = document.getElementById("messages");
+
+let me = null;
+let friend = null;
+
+/* 🔹 SIGNUP */
+signup.onclick = async () => {
+  try{
+    const u = username.value.trim();
+    const p = password.value.trim();
+    if(!u || !p) return status.textContent="Vul alles in";
+    await createUserWithEmailAndPassword(auth, u+"@catchat.com", p);
+    await setDoc(doc(db,"users",u),{friends:[],online:true});
+    status.textContent="Signup gelukt. Log nu in.";
+  }catch(e){status.textContent=e.message;}
+};
+
+/* 🔹 LOGIN */
+loginBtn.onclick = async () => {
+  try{
+    const u = username.value.trim();
+    const p = password.value.trim();
+    await signInWithEmailAndPassword(auth, u+"@catchat.com", p);
+  }catch(e){status.textContent=e.message;}
+};
+
+/* 🔹 LOGOUT */
+logout.onclick = async()=>{
+  if(!me) return;
+  await updateDoc(doc(db,"users",me),{online:false});
+  await signOut(auth);
+};
+
+/* 🔹 AUTH STATE */
+onAuthStateChanged(auth, user=>{
+  if(!user){
+    loginDiv.style.display="block";
+    chatDiv.style.display="none";
+    status.textContent="Niet ingelogd";
+    return;
+  }
+  me = user.email.split("@")[0];
+  meSpan.textContent = me;
+  loginDiv.style.display="none";
+  chatDiv.style.display="block";
+  updateDoc(doc(db,"users",me),{online:true});
+  loadFriends();
+});
+
+/* 🔹 FRIENDS */
+addFriend.onclick = async()=>{
+  if(!friendName.value) return;
+  await updateDoc(doc(db,"users",me),{friends: arrayUnion(friendName.value.toLowerCase())});
+};
+
+function loadFriends(){
+  onSnapshot(doc(db,"users",me),snap=>{
+    friendsDiv.innerHTML="";
+    const data = snap.data();
+    if(!data) return;
+    for(const f of data.friends){
+      const d = document.createElement("div");
+      d.textContent=f;
+      d.style.cursor="pointer";
+      d.style.padding="5px";
+      d.style.background="rgba(255,255,255,0.2)";
+      d.style.marginTop="3px";
+      d.onclick=()=>{friend=f; chatWithSpan.textContent=f; loadChat();}
+      friendsDiv.appendChild(d);
+    }
+  });
+}
+
+/* 🔹 CHAT */
+send.onclick = async()=>{
+  if(!friend) return;
+  await addDoc(collection(db,"messages"),{
+    p:[me,friend], u:me, t:msg.value, ts:Date.now()
+  });
+  msg.value="";
+};
+
+function loadChat(){
+  onSnapshot(query(collection(db,"messages"),orderBy("ts")),snap=>{
+    messagesDiv.innerHTML="";
+    snap.forEach(d=>{
+      const m=d.data();
+      if(m.p.includes(me) && m.p.includes(friend)){
+        messagesDiv.innerHTML += `<div><b>${m.u}</b>: ${m.t}</div>`;
+      }
+    });
+    messagesDiv.scrollTop = messagesDiv.scrollHeight;
+  });
+}
+</script>
+</body>
+</html>
