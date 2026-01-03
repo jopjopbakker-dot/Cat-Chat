@@ -69,6 +69,7 @@ button {
 <h2>Cat Chat 🐱</h2>
 
 <div id="loginDiv">
+  <input id="email" type="email" placeholder="E-mail (optioneel)">
   <input id="username" placeholder="Username">
   <input id="password" type="password" placeholder="Wachtwoord">
   <button id="signup">Signup</button>
@@ -127,9 +128,10 @@ signup.onclick = async () => {
   try {
     const u = username.value.trim().toLowerCase();
     const p = password.value.trim();
+    const e = email.value.trim() || u+"@catchat.com"; // Optioneel e-mail
     if(!u || !p) return status.textContent="Vul alles in";
-    await createUserWithEmailAndPassword(auth, u+"@catchat.com", p);
-    await setDoc(doc(db,"users",u), {friends:[], online:true}, {merge:true});
+    await createUserWithEmailAndPassword(auth, e, p);
+    await setDoc(doc(db,"users",u), {friends:[], online:true, email:e}, {merge:true});
     status.textContent="Signup gelukt. Log nu in.";
   } catch(e){status.textContent=e.message;}
 };
@@ -139,8 +141,9 @@ loginBtn.onclick = async () => {
   try{
     const u = username.value.trim().toLowerCase();
     const p = password.value.trim();
+    const e = email.value.trim() || u+"@catchat.com"; // Optioneel e-mail
     if(!u || !p) return status.textContent="Vul alles in";
-    await signInWithEmailAndPassword(auth, u+"@catchat.com", p);
+    await signInWithEmailAndPassword(auth, e, p);
   } catch(e){status.textContent=e.message;}
 };
 
