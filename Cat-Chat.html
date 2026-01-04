@@ -39,7 +39,7 @@ button {
   color: white;
   cursor: pointer;
 }
-#status {
+#status, #reportStatus, #adminStatus {
   margin-top: 10px;
 }
 #messages {
@@ -50,6 +50,15 @@ button {
   padding: 10px;
   border-radius: 10px;
   margin-top: 10px;
+}
+#adminNotifications {
+  background: rgba(255,255,255,0.25);
+  color: black;
+  padding: 10px;
+  border-radius: 10px;
+  margin-top: 10px;
+  max-height: 150px;
+  overflow-y: auto;
 }
 .friendDiv {
   cursor:pointer;
@@ -84,6 +93,7 @@ button {
 <div class="container">
 <h2>Cat Chat 🐱</h2>
 
+<!-- Login/Signup -->
 <div id="loginDiv">
   <input id="email" type="email" placeholder="E-mail (optioneel)">
   <input id="username" placeholder="Username">
@@ -93,9 +103,19 @@ button {
   <p id="status">Niet ingelogd</p>
 </div>
 
+<!-- Chat -->
 <div id="chatDiv" style="display:none">
   <p>Ingelogd als: <b id="me"></b></p>
   <button id="logout">Logout</button>
+
+  <!-- Admin Notifications -->
+  <h3>Admin Meldingen</h3>
+  <div id="adminNotifications"></div>
+  <div id="adminSendDiv" style="display:none">
+    <input id="adminMsg" placeholder="Typ admin melding...">
+    <button id="sendAdmin">Verstuur</button>
+    <p id="adminStatus"></p>
+  </div>
 
   <h3>Vrienden</h3>
   <input id="friendName" placeholder="Voeg vriend toe">
@@ -106,12 +126,17 @@ button {
   <div id="messages"></div>
   <input id="msg" placeholder="Typ hier...">
   <button id="send">Stuur</button>
+
+  <h3>Meld iets</h3>
+  <input id="reportText" placeholder="Typ hier je melding...">
+  <button id="sendReport">Meld</button>
+  <p id="reportStatus"></p>
 </div>
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.3.0/firebase-app.js";
 import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.3.0/firebase-auth.js";
-import { getFirestore, doc, setDoc, updateDoc, arrayUnion, collection, addDoc, onSnapshot, query, orderBy } from "https://www.gstatic.com/firebasejs/10.3.0/firebase-firestore.js";
+import { getFirestore, doc, setDoc, updateDoc, arrayUnion, collection, addDoc, onSnapshot, query, orderBy, getDoc } from "https://www.gstatic.com/firebasejs/10.3.0/firebase-firestore.js";
 
 /* 🔹 Firebase config */
 const firebaseConfig = {
@@ -138,9 +163,20 @@ const messagesDiv = document.getElementById("messages");
 const typingIndicator = document.getElementById("typingIndicator");
 const msgInput = document.getElementById("msg");
 
+const reportInput = document.getElementById("reportText");
+const sendReportBtn = document.getElementById("sendReport");
+const reportStatus = document.getElementById("reportStatus");
+
+const adminDiv = document.getElementById("adminSendDiv");
+const adminInput = document.getElementById("adminMsg");
+const sendAdminBtn = document.getElementById("sendAdmin");
+const adminStatus = document.getElementById("adminStatus");
+const adminNotificationsDiv = document.getElementById("adminNotifications");
+
 let me = null;
 let friend = null;
 let typingTimeout = null;
+let isAdmin = false;
 
 /* 🔹 SIGNUP */
 signup.onclick = async () => {
@@ -149,8 +185,10 @@ signup.onclick = async () => {
     const p = password.value.trim();
     const e = email.value.trim() || u+"@catchat.com";
     if(!u || !p) return status.textContent="Vul alles in";
+
+    // Als je dit account wilt maken als admin, voeg hier isAdmin:true toe (optioneel)
     await createUserWithEmailAndPassword(auth, e, p);
-    await setDoc(doc(db,"users",u), {friends:[], online:true, email:e}, {merge:true});
+    await setDoc(doc(db,"users",u), {friends:[], online:true, email:e},{merge:true});
     status.textContent="Signup gelukt. Log nu in.";
   } catch(e){status.textContent=e.message;}
 };
@@ -174,7 +212,7 @@ logout.onclick = async()=>{
 };
 
 /* 🔹 AUTH STATE */
-onAuthStateChanged(auth, user=>{
+onAuthStateChanged(auth, async user=>{
   if(!user){
     loginDiv.style.display="block";
     chatDiv.style.display="none";
@@ -185,8 +223,15 @@ onAuthStateChanged(auth, user=>{
   meSpan.textContent = me;
   loginDiv.style.display="none";
   chatDiv.style.display="block";
-  setDoc(doc(db,"users",me),{online:true, typing:false},{merge:true});
+  await setDoc(doc(db,"users",me),{online:true, typing:false},{merge:true});
+
+  // Check admin
+  const userDoc = await getDoc(doc(db,"users",me));
+  isAdmin = userDoc.exists() && userDoc.data().isAdmin === true;
+  adminDiv.style.display = isAdmin ? "block" : "none";
+
   loadFriends();
+  loadAdminNotifications();
 });
 
 /* 🔹 FRIENDS */
@@ -207,18 +252,15 @@ function loadFriends(){
       d.className="friendDiv";
       d.onclick = ()=> {friend=f; chatWithSpan.textContent=f; loadChat();}
       
-      // Friend name + online dot
       const nameSpan = document.createElement("span");
       nameSpan.textContent = f;
       const dot = document.createElement("span");
       dot.className="online-dot";
       
-      // Kijk of friend online is
       onSnapshot(doc(db,"users",f),(snap2)=>{
         if(snap2.exists()){
           const dat = snap2.data();
           dot.style.background = dat.online ? "limegreen" : "grey";
-          // Typ indicator
           typingIndicator.textContent = (friend===f && dat.typing) ? "… is aan het typen" : "";
         }
       });
@@ -263,6 +305,60 @@ msgInput.addEventListener("input", ()=>{
 async function setTyping(isTyping){
   if(!me) return;
   await updateDoc(doc(db,"users",me),{typing:isTyping});
+}
+
+/* 🔹 MELD BUTTON */
+sendReportBtn.onclick = async () => {
+  const text = reportInput.value.trim();
+  if(!text) {
+    reportStatus.textContent = "Vul eerst iets in!";
+    return;
+  }
+  try {
+    await addDoc(collection(db, "reports"), {
+      from: me,
+      text: text,
+      ts: Date.now()
+    });
+    reportStatus.textContent = "Melding verstuurd!";
+    reportInput.value = "";
+    setTimeout(()=> reportStatus.textContent="", 3000);
+  } catch(e) {
+    reportStatus.textContent = "Fout bij verzenden: " + e.message;
+  }
+};
+
+/* 🔹 ADMIN MELDINGEN */
+sendAdminBtn.onclick = async () => {
+  if(!isAdmin) return; // Extra check voor veiligheid
+  const text = adminInput.value.trim();
+  if(!text) {
+    adminStatus.textContent = "Vul eerst iets in!";
+    return;
+  }
+  try {
+    await addDoc(collection(db,"adminNotifications"), {
+      from: me,
+      text: text,
+      ts: Date.now()
+    });
+    adminStatus.textContent = "Admin melding verzonden!";
+    adminInput.value = "";
+    setTimeout(()=> adminStatus.textContent="", 3000);
+  } catch(e) {
+    adminStatus.textContent = "Fout bij verzenden: " + e.message;
+  }
+};
+
+/* 🔹 LAAD ADMIN MELDINGEN VOOR ALLE GEBRUIKERS */
+function loadAdminNotifications(){
+  onSnapshot(query(collection(db,"adminNotifications"),orderBy("ts","desc")), snap=>{
+    adminNotificationsDiv.innerHTML="";
+    snap.forEach(d=>{
+      const m = d.data();
+      adminNotificationsDiv.innerHTML += `<div>${m.text}</div>`;
+    });
+  });
 }
 </script>
 </body>
