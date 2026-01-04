@@ -56,6 +56,22 @@ button {
   padding:5px;
   background: rgba(255,255,255,0.2);
   margin-top:3px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.online-dot {
+  width:12px;
+  height:12px;
+  border-radius:50%;
+  display:inline-block;
+  margin-left:8px;
+  background: grey;
+}
+.typing {
+  font-style: italic;
+  font-size: 0.9em;
+  color: #ddd;
 }
 </style>
 </head>
@@ -86,7 +102,7 @@ button {
   <button id="addFriend">Toevoegen</button>
   <div id="friends"></div>
 
-  <h3>Chat met <span id="chatWith">-</span></h3>
+  <h3>Chat met <span id="chatWith">-</span> <span id="typingIndicator" class="typing"></span></h3>
   <div id="messages"></div>
   <input id="msg" placeholder="Typ hier...">
   <button id="send">Stuur</button>
@@ -119,16 +135,19 @@ const meSpan = document.getElementById("me");
 const friendsDiv = document.getElementById("friends");
 const chatWithSpan = document.getElementById("chatWith");
 const messagesDiv = document.getElementById("messages");
+const typingIndicator = document.getElementById("typingIndicator");
+const msgInput = document.getElementById("msg");
 
 let me = null;
 let friend = null;
+let typingTimeout = null;
 
 /* 🔹 SIGNUP */
 signup.onclick = async () => {
   try {
     const u = username.value.trim().toLowerCase();
     const p = password.value.trim();
-    const e = email.value.trim() || u+"@catchat.com"; // Optioneel e-mail
+    const e = email.value.trim() || u+"@catchat.com";
     if(!u || !p) return status.textContent="Vul alles in";
     await createUserWithEmailAndPassword(auth, e, p);
     await setDoc(doc(db,"users",u), {friends:[], online:true, email:e}, {merge:true});
@@ -141,7 +160,7 @@ loginBtn.onclick = async () => {
   try{
     const u = username.value.trim().toLowerCase();
     const p = password.value.trim();
-    const e = email.value.trim() || u+"@catchat.com"; // Optioneel e-mail
+    const e = email.value.trim() || u+"@catchat.com";
     if(!u || !p) return status.textContent="Vul alles in";
     await signInWithEmailAndPassword(auth, e, p);
   } catch(e){status.textContent=e.message;}
@@ -150,7 +169,7 @@ loginBtn.onclick = async () => {
 /* 🔹 LOGOUT */
 logout.onclick = async()=>{
   if(!me) return;
-  await updateDoc(doc(db,"users",me),{online:false});
+  await updateDoc(doc(db,"users",me),{online:false, typing:false});
   await signOut(auth);
 };
 
@@ -166,7 +185,7 @@ onAuthStateChanged(auth, user=>{
   meSpan.textContent = me;
   loginDiv.style.display="none";
   chatDiv.style.display="block";
-  setDoc(doc(db,"users",me),{online:true},{merge:true});
+  setDoc(doc(db,"users",me),{online:true, typing:false},{merge:true});
   loadFriends();
 });
 
@@ -185,9 +204,27 @@ function loadFriends(){
     if(!data) return;
     for(const f of data.friends){
       const d = document.createElement("div");
-      d.textContent=f;
       d.className="friendDiv";
-      d.onclick=()=>{friend=f; chatWithSpan.textContent=f; loadChat();}
+      d.onclick = ()=> {friend=f; chatWithSpan.textContent=f; loadChat();}
+      
+      // Friend name + online dot
+      const nameSpan = document.createElement("span");
+      nameSpan.textContent = f;
+      const dot = document.createElement("span");
+      dot.className="online-dot";
+      
+      // Kijk of friend online is
+      onSnapshot(doc(db,"users",f),(snap2)=>{
+        if(snap2.exists()){
+          const dat = snap2.data();
+          dot.style.background = dat.online ? "limegreen" : "grey";
+          // Typ indicator
+          typingIndicator.textContent = (friend===f && dat.typing) ? "… is aan het typen" : "";
+        }
+      });
+      
+      d.appendChild(nameSpan);
+      d.appendChild(dot);
       friendsDiv.appendChild(d);
     }
   });
@@ -195,11 +232,12 @@ function loadFriends(){
 
 /* 🔹 CHAT */
 send.onclick = async()=>{
-  if(!friend || !msg.value.trim()) return;
+  if(!friend || !msgInput.value.trim()) return;
   await addDoc(collection(db,"messages"),{
-    p:[me,friend], u:me, t:msg.value, ts:Date.now()
+    p:[me,friend], u:me, t:msgInput.value, ts:Date.now()
   });
-  msg.value="";
+  msgInput.value="";
+  setTyping(false);
 };
 
 function loadChat(){
@@ -213,6 +251,18 @@ function loadChat(){
     });
     messagesDiv.scrollTop = messagesDiv.scrollHeight;
   });
+}
+
+/* 🔹 Typ-indicator */
+msgInput.addEventListener("input", ()=>{
+  setTyping(true);
+  clearTimeout(typingTimeout);
+  typingTimeout = setTimeout(()=> setTyping(false), 1000);
+});
+
+async function setTyping(isTyping){
+  if(!me) return;
+  await updateDoc(doc(db,"users",me),{typing:isTyping});
 }
 </script>
 </body>
